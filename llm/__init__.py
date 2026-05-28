@@ -47,10 +47,14 @@ def list_options() -> list[str]:
     return out
 
 
-def provider_has_key(option: str) -> bool:
+def api_key_env(option: str) -> str:
+    """The secrets.toml key name holding this provider's API key."""
     pname = option.split(":", 1)[0]
-    pconf = _registry().get("providers", {}).get(pname, {})
-    return bool(config.get(pconf.get("api_key_env", "")))
+    return _registry().get("providers", {}).get(pname, {}).get("api_key_env", "")
+
+
+def provider_has_key(option: str) -> bool:
+    return bool(config.get(api_key_env(option)))
 
 
 def get_provider(option: str | None = None) -> LLMProvider:
@@ -76,6 +80,7 @@ __all__ = [
     "ToolCall",
     "default_option",
     "list_options",
+    "api_key_env",
     "provider_has_key",
     "get_provider",
 ]

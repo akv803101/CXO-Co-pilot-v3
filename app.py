@@ -247,7 +247,13 @@ def _sidebar() -> None:
             )
             st.session_state.model = choice
             if not llm.provider_has_key(choice):
-                st.caption("⚠️ Add this provider's API key to secrets.toml.")
+                env = llm.api_key_env(choice)
+                with st.form(f"key_{env}", clear_on_submit=True):
+                    key_val = st.text_input(f"{env}", type="password",
+                                            placeholder="paste API key")
+                    if st.form_submit_button("Save key") and key_val:
+                        config.write_secret(env, key_val)
+                        st.rerun()
         st.divider()
         st.button("🏠 Home", use_container_width=True,
                   on_click=lambda: st.session_state.update(view="home"))
