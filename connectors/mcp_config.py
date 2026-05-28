@@ -14,26 +14,33 @@ Credentials are read from config (secrets.toml) here, never from sources.yaml.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Callable
 
 import config
 
-# Anthropic MCP-client beta flag (CLAUDE.md Section 7). One place, one change.
-MCP_BETA = "mcp-client-2025-04-04"
+_SNOWFLAKE_SERVICE_CONFIG = str(Path(__file__).parent / "snowflake_service_config.yaml")
 
 
 def _snowflake(source: dict[str, Any]) -> dict[str, Any]:
-    args = [
-        "snowflake-mcp",
-        "--account", config.require("SNOWFLAKE_ACCOUNT"),
-        "--user", config.require("SNOWFLAKE_USER"),
-        "--password", config.require("SNOWFLAKE_PASSWORD"),
-        "--warehouse", config.get("SNOWFLAKE_WAREHOUSE", "COMPUTE_WH"),
-    ]
+    # snowflake-labs-mcp: stdio by default, needs a read-only service-config file.
+    # Credentials go through env (SNOWFLAKE_*) so they never appear in the process
+    # argument list. The model qualifies tables as DB.SCHEMA.TABLE from sources.yaml.
+    env = {
+        "SNOWFLAKE_ACCOUNT": config.require("SNOWFLAKE_ACCOUNT"),
+        "SNOWFLAKE_USER": config.require("SNOWFLAKE_USER"),
+        "SNOWFLAKE_PASSWORD": config.require("SNOWFLAKE_PASSWORD"),
+        "SNOWFLAKE_WAREHOUSE": config.get("SNOWFLAKE_WAREHOUSE", "COMPUTE_WH"),
+    }
     role = config.get("SNOWFLAKE_ROLE")
     if role:
-        args += ["--role", role]
-    return {"id": source["id"], "command": "uvx", "args": args, "env": {}}
+        env["SNOWFLAKE_ROLE"] = str(role)
+    return {
+        "id": source["id"],
+        "command": "uvx",
+        "args": ["snowflake-labs-mcp", "--service-config-file", _SNOWFLAKE_SERVICE_CONFIG],
+        "env": env,
+    }
 
 
 def _gsheets(source: dict[str, Any]) -> dict[str, Any]:

@@ -1,0 +1,37 @@
+# Read-only service config for snowflake-labs-mcp (CXO Copilot).
+# Enables SQL querying only — no object creation/mutation. The MCP server requires
+# this file via --service-config-file.
+
+agent_services: []
+search_services: []
+analyst_services: []
+
+other_services:
+  object_manager: false      # no create/drop/alter object tools
+  query_manager: true        # run SELECT queries
+  semantic_manager: true     # discover & query semantic views (read)
+
+# Only read statements permitted; everything that mutates is denied.
+sql_statement_permissions:
+  - Select: true
+  - Describe: true
+  - Show: true
+  - Use: true
+  - Get: true
+  - Alter: false
+  - Command: false
+  - Comment: false
+  - Commit: false
+  - Copy: false
+  - Create: false
+  - Delete: false
+  - Drop: false
+  - Insert: false
+  - Merge: false
+  - Rollback: false
+  - Set: false
+  - Truncate: false
+  - Update: false
+  - Put: false
+  - Unknown: false
+  - Other: false

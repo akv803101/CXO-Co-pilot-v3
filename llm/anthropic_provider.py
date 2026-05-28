@@ -18,6 +18,38 @@ def _to_anthropic_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _to_anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert neutral messages (incl. tool_calls / tool results) to Anthropic shape."""
+    out: list[dict[str, Any]] = []
+    for m in messages:
+        role = m["role"]
+        if role == "user":
+            out.append({"role": "user", "content": m["content"]})
+        elif role == "assistant":
+            blocks: list[dict[str, Any]] = []
+            if m.get("content"):
+                blocks.append({"type": "text", "text": m["content"]})
+            for tc in m.get("tool_calls", []):
+                blocks.append(
+                    {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments}
+                )
+            out.append({"role": "assistant", "content": blocks or m.get("content", "")})
+        elif role == "tool":
+            out.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": m["tool_call_id"],
+                            "content": m["content"],
+                        }
+                    ],
+                }
+            )
+    return out
+
+
 class AnthropicProvider(LLMProvider):
     def _client(self):
         from anthropic import Anthropic
@@ -35,7 +67,7 @@ class AnthropicProvider(LLMProvider):
             "model": self.model,
             "max_tokens": max_tokens,
             "system": system,
-            "messages": messages,
+            "messages": _to_anthropic_messages(messages),
         }
         if tools:
             kwargs["tools"] = _to_anthropic_tools(tools)

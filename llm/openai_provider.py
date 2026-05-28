@@ -27,6 +27,34 @@ def _to_openai_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _to_openai_messages(
+    system: str, messages: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Convert neutral messages (incl. tool_calls / tool results) to OpenAI shape."""
+    out: list[dict[str, Any]] = [{"role": "system", "content": system}]
+    for m in messages:
+        role = m["role"]
+        if role == "user":
+            out.append({"role": "user", "content": m["content"]})
+        elif role == "assistant":
+            msg: dict[str, Any] = {"role": "assistant", "content": m.get("content") or None}
+            if m.get("tool_calls"):
+                msg["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+                    }
+                    for tc in m["tool_calls"]
+                ]
+            out.append(msg)
+        elif role == "tool":
+            out.append(
+                {"role": "tool", "tool_call_id": m["tool_call_id"], "content": m["content"]}
+            )
+    return out
+
+
 class OpenAICompatibleProvider(LLMProvider):
     def _client(self):
         from openai import OpenAI
@@ -40,10 +68,9 @@ class OpenAICompatibleProvider(LLMProvider):
         tools: list[dict[str, Any]] | None = None,
         max_tokens: int = 2048,
     ) -> ChatResult:
-        oai_messages = [{"role": "system", "content": system}, *messages]
         kwargs: dict[str, Any] = {
             "model": self.model,
-            "messages": oai_messages,
+            "messages": _to_openai_messages(system, messages),
             "max_tokens": max_tokens,
         }
         if tools:

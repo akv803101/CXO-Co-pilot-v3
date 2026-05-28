@@ -16,8 +16,10 @@ import yaml
 
 import config
 import llm
+from mcp_host import McpHost
 
 _SOURCES_PATH = Path(__file__).parent / "registry" / "sources.yaml"
+MAX_TOOL_ITERS = 8
 
 # Output contract keys (CLAUDE.md Section 6).
 OUTPUT_KEYS = ("answer", "chart", "slide_deck", "sources_used", "follow_up_hints")
@@ -106,6 +108,13 @@ and reply with direct, filler-free prose.
 ## Routing rules
 Match the question intent to a source's capability, then query that source.
 {routing}
+
+## Using the data tools
+Each source exposes MCP tools (named `<source_id>__<tool>`). To answer, CALL these
+tools to fetch real rows — never invent numbers. If a source's tables/columns are
+not listed above, first use its tools to discover the schema (list tables, describe
+columns), then query. Only after you have the rows, compute the answer and reply
+with the final JSON object.
 A question spanning all active sources, or containing any of {SLIDE_TRIGGER_WORDS}, is an
 executive brief: set slide_deck=true and include every queried source in sources_used.
 
@@ -208,10 +217,49 @@ def ask(
         )
 
     system = build_system_prompt(sources)
-    messages = list(history or []) + [{"role": "user", "content": question}]
+    messages: list[dict[str, Any]] = list(history or []) + [
+        {"role": "user", "content": question}
+    ]
     provider = llm.get_provider(model)
-    result = provider.chat(system=system, messages=messages, max_tokens=2048)
-    return normalize(_extract_json(result.text))
+
+    host: McpHost | None = None
+    try:
+        try:
+            host = McpHost(sources)
+        except Exception as exc:
+            return normalize(
+                {
+                    "answer": f"Could not connect to the data sources: {exc}",
+                    "chart": {"type": "none"},
+                    "slide_deck": False,
+                    "sources_used": [],
+                    "follow_up_hints": [
+                        "Add the source credentials to .streamlit/secrets.toml",
+                        "Verify the source is active in sources.yaml",
+                    ],
+                }
+            )
+        tools = host.tools()
+        for _ in range(MAX_TOOL_ITERS):
+            result = provider.chat(
+                system=system, messages=messages, tools=tools, max_tokens=2048
+            )
+            if not result.tool_calls:
+                return normalize(_extract_json(result.text))
+            messages.append(
+                {"role": "assistant", "content": result.text, "tool_calls": result.tool_calls}
+            )
+            for tc in result.tool_calls:
+                output = host.call(tc.name, tc.arguments)
+                messages.append(
+                    {"role": "tool", "tool_call_id": tc.id, "name": tc.name, "content": output}
+                )
+        # Tool budget exhausted — force a final answer with no tools.
+        final = provider.chat(system=system, messages=messages, max_tokens=2048)
+        return normalize(_extract_json(final.text))
+    finally:
+        if host is not None:
+            host.close()
 
 
 # ----------------------------------------------- Section 13 backend functions

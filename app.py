@@ -139,14 +139,19 @@ def _wizard() -> None:
     st.markdown("**Step 2 — Credentials**")
     creds: dict[str, str] = {}
     sheet_id = ""
+    database = schema = ""
     if stype == "csv":
         st.file_uploader("Upload CSV / Excel", type=["csv", "xlsx"])
     else:
         for field in CRED_FIELDS.get(stype, []):
             is_secret = any(w in field for w in ("PASSWORD", "TOKEN", "KEY"))
             creds[field] = st.text_input(field, type="password" if is_secret else "default")
+        if stype == "snowflake":
+            database = st.text_input("Database")
+            schema = st.text_input("Schema")
         if stype == "gsheets":
             sheet_id = st.text_input("Sheet ID (URL between /d/ and /edit)")
+    st.caption("Schema (tables/columns) is auto-discovered from the source on connect.")
 
     domains = st.multiselect("Step 3 — Domain(s)", list(DOMAIN_OPTIONS))
     label = st.text_input("Step 4 — Name this source")
@@ -166,6 +171,8 @@ def _wizard() -> None:
             "schema_discovery": "both",
             "tables": [],
         }
+        if stype == "snowflake" and (database or schema):
+            entry["connection"] = {"database": database, "schema": schema}
         if stype == "gsheets" and sheet_id:
             entry["sheet_id"] = sheet_id
         try:
