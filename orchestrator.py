@@ -225,7 +225,7 @@ def ask(
     host: McpHost | None = None
     try:
         try:
-            host = McpHost(sources)
+            host = McpHost(sources, timeout=60)
         except Exception as exc:
             return normalize(
                 {

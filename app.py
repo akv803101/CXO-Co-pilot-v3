@@ -151,7 +151,13 @@ def _wizard() -> None:
             schema = st.text_input("Schema")
         if stype == "gsheets":
             sheet_id = st.text_input("Sheet ID (URL between /d/ and /edit)")
-    st.caption("Schema (tables/columns) is auto-discovered from the source on connect.")
+    tables_raw = ""
+    if stype != "csv":
+        tables_raw = st.text_area(
+            "Tables / Views to query (comma or newline separated)",
+            placeholder="ORDERS, CUSTOMER, LINEITEM",
+        )
+    st.caption("List the tables/views to expose. Columns are auto-discovered on first query.")
 
     domains = st.multiselect("Step 3 — Domain(s)", list(DOMAIN_OPTIONS))
     label = st.text_input("Step 4 — Name this source")
@@ -162,6 +168,7 @@ def _wizard() -> None:
             st.error("Pick at least one domain and give the source a name.")
             return
         source_id = label.strip().lower().replace(" ", "_").replace("/", "_")
+        table_names = [t.strip() for t in tables_raw.replace("\n", ",").split(",") if t.strip()]
         entry: dict[str, Any] = {
             "id": source_id,
             "type": stype,
@@ -169,7 +176,7 @@ def _wizard() -> None:
             "capability": [DOMAIN_OPTIONS[d] for d in domains],
             "active": True,
             "schema_discovery": "both",
-            "tables": [],
+            "tables": [{"name": t} for t in table_names],
         }
         if stype == "snowflake" and (database or schema):
             entry["connection"] = {"database": database, "schema": schema}

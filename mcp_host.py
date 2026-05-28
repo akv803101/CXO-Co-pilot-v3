@@ -10,10 +10,13 @@ reliably inside Streamlit. One McpHost per ask(); close() tears down subprocesse
 
 from __future__ import annotations
 
+import collections
 import json
+import queue
 import re
 import subprocess
 import threading
+import time
 from typing import Any
 
 from connectors import mcp_config
@@ -40,13 +43,26 @@ class _Server:
             [cfg["command"], *cfg["args"]],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             env=env,
             text=True,
             bufsize=1,
         )
         self._id = 0
         self._lock = threading.Lock()
+        self._stderr: collections.deque[str] = collections.deque(maxlen=60)
+        threading.Thread(target=self._drain_stderr, daemon=True).start()
+
+    def _drain_stderr(self) -> None:
+        assert self.proc.stderr is not None
+        for line in self.proc.stderr:
+            self._stderr.append(line.rstrip())
+
+    def _stderr_tail(self, n: int = 6) -> str:
+        # Keep the most relevant lines (error/exception), else last n.
+        errs = [l for l in self._stderr if "error" in l.lower() or "404" in l or "exception" in l.lower()]
+        lines = errs[-n:] if errs else list(self._stderr)[-n:]
+        return "\n".join(lines)
 
     # ----- framing
     def _send(self, obj: dict[str, Any]) -> None:
@@ -55,12 +71,11 @@ class _Server:
         self.proc.stdin.flush()
 
     def _read_until(self, want_id: int) -> dict[str, Any]:
-        """Read newline-delimited messages until the response with want_id."""
+        """Read messages until the response with want_id; fail fast if the server dies."""
         assert self.proc.stdout is not None
-        result: dict[str, Any] = {}
+        q: queue.Queue[dict[str, Any]] = queue.Queue()
 
         def reader() -> None:
-            nonlocal result
             for line in self.proc.stdout:  # type: ignore[union-attr]
                 line = line.strip()
                 if not line:
@@ -70,17 +85,27 @@ class _Server:
                 except json.JSONDecodeError:
                     continue  # ignore non-JSON noise
                 if msg.get("id") == want_id:
-                    result = msg
+                    q.put(msg)
                     return
 
-        t = threading.Thread(target=reader, daemon=True)
-        t.start()
-        t.join(self.timeout)
-        if not result:
-            raise TimeoutError(f"MCP server '{self.source_id}' did not respond in time.")
-        if "error" in result:
-            raise RuntimeError(f"MCP error from '{self.source_id}': {result['error']}")
-        return result.get("result", {})
+        threading.Thread(target=reader, daemon=True).start()
+        deadline = time.time() + self.timeout
+        while time.time() < deadline:
+            try:
+                result = q.get(timeout=0.5)
+            except queue.Empty:
+                if self.proc.poll() is not None:  # server crashed — surface why now
+                    raise RuntimeError(
+                        f"MCP server '{self.source_id}' exited (code {self.proc.returncode}). "
+                        f"Likely a connection/credential error:\n{self._stderr_tail()}"
+                    )
+                continue
+            if "error" in result:
+                raise RuntimeError(f"MCP error from '{self.source_id}': {result['error']}")
+            return result.get("result", {})
+        raise TimeoutError(
+            f"MCP server '{self.source_id}' did not respond in {self.timeout}s.\n{self._stderr_tail()}"
+        )
 
     def _request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         with self._lock:

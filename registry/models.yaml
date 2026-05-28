@@ -3,7 +3,7 @@
 # OpenRouter, …) as a new block with adapter: openai_compatible + base_url + key env.
 # API keys live in secrets.toml under the api_key_env name — never here.
 
-default: "anthropic:claude-opus-4-7"
+default: "groq:llama-3.3-70b-versatile"
 
 providers:
   anthropic:

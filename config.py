@@ -8,7 +8,6 @@ never in sources.yaml.
 from __future__ import annotations
 
 import os
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -29,8 +28,9 @@ _VAR_DEFAULTS: dict[str, str] = {
 }
 
 
-@lru_cache(maxsize=1)
 def _file_secrets() -> dict[str, Any]:
+    # Read fresh each call so credentials entered through the UI at runtime take
+    # effect immediately, without a restart.
     if not _SECRETS_PATH.exists():
         return {}
     with _SECRETS_PATH.open("rb") as fh:
@@ -48,13 +48,17 @@ def _st_secrets() -> dict[str, Any]:
 
 
 def get(key: str, default: Any = None) -> Any:
-    """Look up a single secret/value. Precedence: env > Streamlit > file."""
+    """Look up a single secret/value. Precedence: env > file (fresh) > Streamlit.
+
+    File comes before st.secrets because Streamlit caches secrets at startup;
+    reading the file lets UI-entered credentials apply without a restart.
+    """
     if key in os.environ:
         return os.environ[key]
-    st_secrets = _st_secrets()
-    if key in st_secrets:
-        return st_secrets[key]
-    return _file_secrets().get(key, default)
+    file_secrets = _file_secrets()
+    if key in file_secrets:
+        return file_secrets[key]
+    return _st_secrets().get(key, default)
 
 
 def require(key: str) -> str:
@@ -85,7 +89,6 @@ def write_secret(key: str, value: str) -> None:
     else:
         lines.append(new_line)
     _SECRETS_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    _file_secrets.cache_clear()
 
 
 def variables() -> dict[str, str]:

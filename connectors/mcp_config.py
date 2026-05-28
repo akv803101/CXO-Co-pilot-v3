@@ -22,12 +22,25 @@ import config
 _SNOWFLAKE_SERVICE_CONFIG = str(Path(__file__).parent / "snowflake_service_config.yaml")
 
 
+def _normalize_account(raw: str) -> str:
+    """Accept any common paste form and return the bare account identifier.
+
+    Snowflake's connector appends '.snowflakecomputing.com' itself, so we must
+    strip a full hostname / URL / trailing slash to avoid a doubled domain.
+    """
+    acct = raw.strip()
+    acct = acct.removeprefix("https://").removeprefix("http://")
+    acct = acct.split("/")[0]                       # drop any path
+    acct = acct.split(".snowflakecomputing.com")[0]  # drop domain suffix
+    return acct.strip(". ")
+
+
 def _snowflake(source: dict[str, Any]) -> dict[str, Any]:
     # snowflake-labs-mcp: stdio by default, needs a read-only service-config file.
     # Credentials go through env (SNOWFLAKE_*) so they never appear in the process
     # argument list. The model qualifies tables as DB.SCHEMA.TABLE from sources.yaml.
     env = {
-        "SNOWFLAKE_ACCOUNT": config.require("SNOWFLAKE_ACCOUNT"),
+        "SNOWFLAKE_ACCOUNT": _normalize_account(config.require("SNOWFLAKE_ACCOUNT")),
         "SNOWFLAKE_USER": config.require("SNOWFLAKE_USER"),
         "SNOWFLAKE_PASSWORD": config.require("SNOWFLAKE_PASSWORD"),
         "SNOWFLAKE_WAREHOUSE": config.get("SNOWFLAKE_WAREHOUSE", "COMPUTE_WH"),
