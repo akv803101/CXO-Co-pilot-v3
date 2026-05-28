@@ -286,6 +286,26 @@ def _sample_rows(source: dict[str, Any]) -> str:
     return _source_block(source, config.variables())
 
 
+def add_source(entry: dict[str, Any]) -> str:
+    """Append a new source entry to sources.yaml (active). Returns its id.
+
+    Used by the Connection Wizard (Section 12, Step 5). Credentials are NOT part
+    of the entry — they go to secrets.toml via config.write_secret().
+    """
+    if "id" not in entry or "type" not in entry:
+        raise ValueError("Source entry needs at least 'id' and 'type'.")
+    with _SOURCES_PATH.open("r", encoding="utf-8") as fh:
+        data = yaml.safe_load(fh) or {"sources": []}
+    data.setdefault("sources", [])
+    if any(s.get("id") == entry["id"] for s in data["sources"]):
+        raise ValueError(f"Source id '{entry['id']}' already exists.")
+    entry.setdefault("active", True)
+    entry.setdefault("schema_discovery", "both")
+    data["sources"].append(entry)
+    _write_sources(data)
+    return entry["id"]
+
+
 def set_source_domain(source_id: str, capability: list[str]) -> bool:
     """Update only the capability field of a source. Atomic full-file rewrite."""
     with _SOURCES_PATH.open("r", encoding="utf-8") as fh:

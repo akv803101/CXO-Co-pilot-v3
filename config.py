@@ -66,6 +66,28 @@ def require(key: str) -> str:
     return str(val)
 
 
+def write_secret(key: str, value: str) -> None:
+    """Persist one credential to .streamlit/secrets.toml (created if absent).
+
+    Credentials are written here only — never kept in UI state (Section 12).
+    Minimal TOML writer: upserts a top-level key as a quoted string.
+    """
+    _SECRETS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    lines: list[str] = []
+    if _SECRETS_PATH.exists():
+        lines = _SECRETS_PATH.read_text(encoding="utf-8").splitlines()
+    safe = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    new_line = f'{key} = "{safe}"'
+    for i, line in enumerate(lines):
+        if line.strip().startswith(f"{key} ") or line.strip().startswith(f"{key}="):
+            lines[i] = new_line
+            break
+    else:
+        lines.append(new_line)
+    _SECRETS_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _file_secrets.cache_clear()
+
+
 def variables() -> dict[str, str]:
     """The Section 1 brand/period tokens, resolved at runtime with defaults."""
     return {name: str(get(name, default)) for name, default in _VAR_DEFAULTS.items()}
