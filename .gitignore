@@ -1,0 +1,23 @@
+# Secrets — never commit
+.streamlit/secrets.toml
+.streamlit/users.yaml
+.env
+*.key
+*service-account*.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Generated decks
+*.pptx
+exports/

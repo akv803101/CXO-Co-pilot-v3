@@ -1,0 +1,129 @@
+# Single source of truth for all data sources.
+# Credentials NEVER live here — they go in .streamlit/secrets.toml.
+# Add a source: append an entry, set active: true, add creds to secrets.toml.
+# schema_discovery: mcp | manual | both  (default both — config annotations win on conflict)
+
+sources:
+  # ---------------------------------------------------------------- revenue
+  - id: revenue_db
+    type: snowflake
+    label: "Revenue & Forecasts"
+    capability: [revenue]
+    active: true
+    schema_discovery: both
+    connection:
+      database: ""          # e.g. CXO_DEMO   (or reference secrets.toml)
+      schema: ""            # e.g. PUBLIC
+    tables:
+      - name: orders
+        description: "One row per order — revenue, units, region, channel, date"
+        columns:
+          - name: date
+            type: date
+            description: "Order date"
+          - name: region
+            type: string
+            description: "Geographic region"
+          - name: channel
+            type: string
+            description: "Sales channel"
+          - name: units
+            type: number
+            description: "Units sold"
+          - name: revenue
+            type: number
+            description: "Revenue in {{CURRENCY_SYMBOL}}"
+      - name: forecast
+        description: "Period-level revenue targets by region"
+        columns:
+          - name: period
+            type: string
+            description: "Reporting period e.g. {{PERIOD}}"
+          - name: region
+            type: string
+            description: "Geographic region"
+          - name: target_revenue
+            type: number
+            description: "Target revenue for the period in {{CURRENCY_SYMBOL}}"
+
+  # --------------------------------------------------------------- pipeline
+  - id: pipeline_sheet
+    type: gsheets
+    label: "Pipeline / CRM"
+    capability: [pipeline]
+    active: true
+    schema_discovery: both
+    sheet_id: ""            # URL between /d/ and /edit (or reference secrets.toml)
+    tables:
+      - name: Pipeline
+        description: "One row per deal"
+        columns:
+          - name: deal_name
+            description: "Deal / account name"
+          - name: stage
+            description: "Pipeline stage"
+          - name: value
+            description: "Deal value in {{CURRENCY_SYMBOL}}"
+          - name: close_date
+            description: "Expected close date"
+          - name: region
+            description: "Geographic region"
+          - name: owner
+            description: "Deal owner"
+          - name: risk_flag
+            description: "true if the deal is flagged at risk"
+
+  # -------------------------------------------------------------- campaigns
+  - id: campaigns_sheet
+    type: gsheets
+    label: "Marketing Campaigns"
+    capability: [campaigns]
+    active: true
+    schema_discovery: both
+    sheet_id: ""
+    tables:
+      - name: Campaigns
+        description: "One row per campaign per channel"
+        columns:
+          - name: campaign_name
+            description: "Campaign name"
+          - name: channel
+            description: "Marketing channel"
+          - name: spend
+            description: "Spend in {{CURRENCY_SYMBOL}}"
+          - name: revenue_attributed
+            description: "Revenue attributed to the campaign in {{CURRENCY_SYMBOL}}"
+          - name: period
+            description: "Reporting period"
+
+  # ---------------------------------------------- inactive templates (creds later)
+  # Flip active: true and add creds to secrets.toml to connect any of these.
+  - id: finance_db
+    type: postgres
+    label: "Finance & P&L"
+    capability: [finance]
+    active: false
+    schema_discovery: both
+    tables:
+      - name: pnl
+        description: "Profit & loss lines by cost centre and period"
+        columns:
+          - name: period
+          - name: cost_centre
+          - name: line_item
+          - name: amount
+
+  - id: hr_db
+    type: mysql
+    label: "HR & People"
+    capability: [hr]
+    active: false
+    schema_discovery: both
+    tables:
+      - name: headcount
+        description: "Headcount and attrition by department"
+        columns:
+          - name: department
+          - name: headcount
+          - name: attrition
+          - name: period
