@@ -13,6 +13,7 @@ import streamlit as st
 
 import auth
 import config
+import llm
 import orchestrator
 import slides
 
@@ -54,6 +55,7 @@ def _init_state() -> None:
     ss.setdefault("messages", [])          # [{role, content} | {role:'assistant', payload}]
     ss.setdefault("suggested", [])         # suggested question chips
     ss.setdefault("pending", None)         # queued message text (from a chip click)
+    ss.setdefault("model", llm.default_option())  # "provider:model" selection
 
 
 # ---------------------------------------------------------------------- helpers
@@ -86,7 +88,9 @@ def _refresh_suggestions() -> None:
         st.session_state.suggested = []
         return
     try:
-        res = orchestrator.on_source_connected(srcs[0]["id"])
+        res = orchestrator.on_source_connected(
+            srcs[0]["id"], model=st.session_state.get("model")
+        )
         st.session_state.suggested = res.get("suggested_questions", [])[:3]
     except Exception:
         st.session_state.suggested = []
@@ -169,7 +173,9 @@ def _wizard() -> None:
             for key, val in creds.items():
                 if val:
                     config.write_secret(key, val)
-            res = orchestrator.on_source_connected(source_id)
+            res = orchestrator.on_source_connected(
+                source_id, model=st.session_state.get("model")
+            )
             st.session_state.suggested = res.get("suggested_questions", [])[:3]
             st.session_state.view = "chat"
             st.success(f"Connected {label}.")
@@ -224,6 +230,18 @@ def _sidebar() -> None:
         st.markdown(f"**📊 CXO Copilot**")
         st.caption(f"Signed in as {st.session_state.user['name']}")
         st.divider()
+        options = llm.list_options()
+        if options:
+            current = st.session_state.model
+            idx = options.index(current) if current in options else 0
+            choice = st.selectbox(
+                "Model", options, index=idx,
+                format_func=lambda o: o + ("" if llm.provider_has_key(o) else "  (no key)"),
+            )
+            st.session_state.model = choice
+            if not llm.provider_has_key(choice):
+                st.caption("⚠️ Add this provider's API key to secrets.toml.")
+        st.divider()
         st.button("🏠 Home", use_container_width=True,
                   on_click=lambda: st.session_state.update(view="home"))
         st.button("➕ New Chat", use_container_width=True, on_click=_new_chat)
@@ -270,7 +288,10 @@ def _chat() -> None:
         with st.chat_message("assistant"):
             with st.spinner("Thinking…"):
                 try:
-                    payload = orchestrator.ask(text, history=_history_for_api()[:-1])
+                    payload = orchestrator.ask(
+                        text, history=_history_for_api()[:-1],
+                        model=st.session_state.model,
+                    )
                 except Exception as exc:
                     payload = {
                         "answer": f"Something went wrong reaching the data: {exc}",

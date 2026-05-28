@@ -1,0 +1,51 @@
+# Available LLM providers + models for the runtime model selector.
+# Pluggable: add any OpenAI-compatible provider (Together, Fireworks, local vLLM,
+# OpenRouter, …) as a new block with adapter: openai_compatible + base_url + key env.
+# API keys live in secrets.toml under the api_key_env name — never here.
+
+default: "anthropic:claude-opus-4-7"
+
+providers:
+  anthropic:
+    adapter: anthropic
+    label: "Anthropic"
+    api_key_env: ANTHROPIC_API_KEY
+    models:
+      - claude-opus-4-7
+      - claude-sonnet-4-6
+      - claude-haiku-4-5-20251001
+
+  openai:
+    adapter: openai_compatible
+    label: "OpenAI"
+    api_key_env: OPENAI_API_KEY
+    base_url: "https://api.openai.com/v1"
+    models:
+      - gpt-4o
+      - gpt-4o-mini
+      - o3-mini
+
+  groq:
+    adapter: openai_compatible
+    label: "Groq"
+    api_key_env: GROQ_API_KEY
+    base_url: "https://api.groq.com/openai/v1"
+    models:
+      - llama-3.3-70b-versatile
+      - llama-3.1-8b-instant
+      - mixtral-8x7b-32768
+
+  # --- pluggable examples (uncomment + add key to enable) ---
+  # together:
+  #   adapter: openai_compatible
+  #   label: "Together"
+  #   api_key_env: TOGETHER_API_KEY
+  #   base_url: "https://api.together.xyz/v1"
+  #   models: [meta-llama/Llama-3.3-70B-Instruct-Turbo]
+  #
+  # local:
+  #   adapter: openai_compatible
+  #   label: "Local (vLLM/Ollama)"
+  #   api_key_env: LOCAL_API_KEY
+  #   base_url: "http://localhost:8000/v1"
+  #   models: [llama3.1]

@@ -1,5 +1,6 @@
 streamlit>=1.36
 anthropic>=0.40
+openai>=1.40
 pyyaml>=6.0
 pandas>=2.0
 python-pptx>=0.6.23

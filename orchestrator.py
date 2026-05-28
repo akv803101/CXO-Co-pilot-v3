@@ -9,17 +9,15 @@ from __future__ import annotations
 
 import json
 import re
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 import config
-from connectors import mcp_config
+import llm
 
 _SOURCES_PATH = Path(__file__).parent / "registry" / "sources.yaml"
-MODEL = config.get("CLAUDE_MODEL", "claude-opus-4-7")
 
 # Output contract keys (CLAUDE.md Section 6).
 OUTPUT_KEYS = ("answer", "chart", "slide_deck", "sources_used", "follow_up_hints")
@@ -138,13 +136,6 @@ Rules for the JSON:
 
 
 # ------------------------------------------------------------------- live call
-@lru_cache(maxsize=1)
-def _client():
-    from anthropic import Anthropic
-
-    return Anthropic(api_key=config.get("ANTHROPIC_API_KEY"))
-
-
 def _extract_json(text: str) -> dict[str, Any]:
     """Pull the JSON object out of a model reply (handles ```json fences / prose)."""
     fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
@@ -191,12 +182,16 @@ def ask(
     question: str,
     history: list[dict[str, str]] | None = None,
     allowed_source_ids: list[str] | None = None,
+    model: str | None = None,
 ) -> dict[str, Any]:
     """Answer one question. Returns the Section 6 JSON shape.
 
     history: prior turns as [{"role": "user"|"assistant", "content": str}, ...] —
              passed in full for multi-turn (Q5).
-    allowed_source_ids: RBAC gate. None = all active sources.
+    allowed_source_ids: source gate. None = all active sources.
+    model: "provider:model" selection (e.g. "groq:llama-3.3-70b-versatile").
+           None = registry default. Live data tools are wired by the MCP host
+           (next step); this call routes the prompt to the chosen provider.
     """
     sources = load_sources(active_only=True)
     if allowed_source_ids is not None:
@@ -204,32 +199,23 @@ def ask(
     if not sources:
         return normalize(
             {
-                "answer": "No data sources are accessible for your role.",
+                "answer": "No data sources are connected.",
                 "chart": {"type": "none"},
                 "slide_deck": False,
                 "sources_used": [],
-                "follow_up_hints": ["Connect a data source", "Contact your admin"],
+                "follow_up_hints": ["Connect a data source", "Add credentials"],
             }
         )
 
     system = build_system_prompt(sources)
     messages = list(history or []) + [{"role": "user", "content": question}]
-    mcp_servers = mcp_config.servers_for(sources)
-
-    resp = _client().beta.messages.create(
-        model=MODEL,
-        max_tokens=2048,
-        system=system,
-        messages=messages,
-        mcp_servers=mcp_servers,
-        betas=[mcp_config.MCP_BETA],
-    )
-    text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
-    return normalize(_extract_json(text))
+    provider = llm.get_provider(model)
+    result = provider.chat(system=system, messages=messages, max_tokens=2048)
+    return normalize(_extract_json(result.text))
 
 
 # ----------------------------------------------- Section 13 backend functions
-def on_source_connected(source_id: str) -> dict[str, Any]:
+def on_source_connected(source_id: str, model: str | None = None) -> dict[str, Any]:
     """After a source is added: sample it and propose 3 exec questions (Section 13)."""
     sources = load_sources(active_only=False)
     source = next((s for s in sources if s["id"] == source_id), None)
@@ -249,8 +235,6 @@ def on_source_connected(source_id: str) -> dict[str, Any]:
     }
 
     try:
-        from anthropic import Anthropic  # noqa: F401
-
         sample = _sample_rows(source)
         instruction = (
             "You have just been connected to a new data source. Read the sample, "
@@ -259,17 +243,12 @@ def on_source_connected(source_id: str) -> dict[str, Any]:
             "must be specific to the actual data shown, not generic. Return JSON only "
             'as {"summary": "...", "suggested_questions": ["...","...","..."]}.'
         )
-        resp = _client().messages.create(
-            model=MODEL,
+        result = llm.get_provider(model).chat(
+            system="You generate executive questions about a data source. JSON only.",
+            messages=[{"role": "user", "content": f"{instruction}\n\nSample:\n{sample}"}],
             max_tokens=512,
-            messages=[
-                {"role": "user", "content": f"{instruction}\n\nSample:\n{sample}"}
-            ],
         )
-        text = "".join(
-            b.text for b in resp.content if getattr(b, "type", None) == "text"
-        )
-        parsed = _extract_json(text)
+        parsed = _extract_json(result.text)
         return {
             "source_label": label,
             "summary": parsed.get("summary", generic["summary"]),
