@@ -160,17 +160,30 @@ class McpHost:
         # neutral_tool_name -> (server, original_tool_name)
         self._registry: dict[str, tuple[_Server, str]] = {}
         self._schema: list[dict[str, Any]] = []
-        for cfg in mcp_config.servers_for(sources):
-            server = _Server(cfg["id"], cfg, timeout=timeout)
-            server.initialize()
+        # (source_id, error) for sources that failed to connect — answer from the rest.
+        self.errors: list[tuple[str, str]] = []
+        for src in sources:
+            if src.get("type") in mcp_config._BUILTIN:
+                continue
+            server: _Server | None = None
+            try:
+                cfg = mcp_config.server_for(src)
+                server = _Server(cfg["id"], cfg, timeout=timeout)
+                server.initialize()
+                tools = server.list_tools()
+            except Exception as exc:
+                if server is not None:
+                    server.close()
+                self.errors.append((src["id"], str(exc)[-300:]))
+                continue
             self._servers.append(server)
-            for tool in server.list_tools():
-                neutral = _safe_tool_name(cfg["id"], tool["name"])
+            for tool in tools:
+                neutral = _safe_tool_name(src["id"], tool["name"])
                 self._registry[neutral] = (server, tool["name"])
                 self._schema.append(
                     {
                         "name": neutral,
-                        "description": f"[source: {cfg['id']}] {tool.get('description', '')}",
+                        "description": f"[source: {src['id']}] {tool.get('description', '')}",
                         "input_schema": tool.get("inputSchema")
                         or {"type": "object", "properties": {}},
                     }

@@ -240,6 +240,26 @@ def ask(
                 }
             )
         tools = host.tools()
+        if not tools:
+            detail = "; ".join(f"{sid} ({err})" for sid, err in host.errors) or "no tools exposed"
+            return normalize(
+                {
+                    "answer": f"Could not reach any data source. {detail}",
+                    "chart": {"type": "none"},
+                    "slide_deck": False,
+                    "sources_used": [],
+                    "follow_up_hints": [
+                        "Check the source credentials",
+                        "Verify the source is reachable",
+                    ],
+                }
+            )
+        if host.errors:
+            unreachable = ", ".join(sid for sid, _ in host.errors)
+            system += (
+                f"\n\nNote: these sources are currently UNREACHABLE — do not use them and "
+                f"flag the gap in your answer: {unreachable}."
+            )
         for _ in range(MAX_TOOL_ITERS):
             result = provider.chat(
                 system=system, messages=messages, tools=tools, max_tokens=2048
@@ -336,6 +356,19 @@ def add_source(entry: dict[str, Any]) -> str:
         data["sources"].append(entry)
     _write_sources(data)
     return entry["id"]
+
+
+def remove_source(source_id: str) -> bool:
+    """Delete a source entry from sources.yaml. Returns True if one was removed."""
+    with _SOURCES_PATH.open("r", encoding="utf-8") as fh:
+        data = yaml.safe_load(fh) or {"sources": []}
+    sources = data.get("sources", [])
+    kept = [s for s in sources if s.get("id") != source_id]
+    if len(kept) == len(sources):
+        return False
+    data["sources"] = kept
+    _write_sources(data)
+    return True
 
 
 def set_source_domain(source_id: str, capability: list[str]) -> bool:

@@ -82,6 +82,11 @@ def _new_chat() -> None:
     st.session_state.pending = None
 
 
+def _remove_source(source_id: str) -> None:
+    orchestrator.remove_source(source_id)
+    _refresh_suggestions()
+
+
 def _refresh_suggestions() -> None:
     srcs = _active_sources()
     if not srcs:
@@ -277,6 +282,8 @@ def _sidebar() -> None:
                 for t in s.get("tables", []):
                     cols = [c["name"] for c in t.get("columns", [])]
                     st.write(f"`{t['name']}`: {', '.join(cols)}")
+                st.button("🗑 Remove", key=f"rm_{s['id']}",
+                          on_click=_remove_source, args=(s["id"],))
         st.divider()
         st.button("Log out", on_click=lambda: st.session_state.update(user=None))
 
