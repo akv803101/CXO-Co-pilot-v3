@@ -56,6 +56,7 @@ def _init_state() -> None:
     ss.setdefault("suggested", [])         # suggested question chips
     ss.setdefault("pending", None)         # queued message text (from a chip click)
     ss.setdefault("model", llm.default_option())  # "provider:model" selection
+    ss.setdefault("edit_source_id", None)  # source being edited
 
 
 # ---------------------------------------------------------------------- helpers
@@ -85,6 +86,11 @@ def _new_chat() -> None:
 def _remove_source(source_id: str) -> None:
     orchestrator.remove_source(source_id)
     _refresh_suggestions()
+
+
+def _edit_source_open(source_id: str) -> None:
+    st.session_state.edit_source_id = source_id
+    st.session_state.view = "edit"
 
 
 def _refresh_suggestions() -> None:
@@ -243,6 +249,77 @@ def _render_payload(payload: dict[str, Any]) -> None:
         st.caption("Sources: " + "  ".join(f"`{s}`" for s in used))
 
 
+# ------------------------------------------------------- Edit a data source
+def _edit_source() -> None:
+    sid = st.session_state.edit_source_id
+    src = next((s for s in orchestrator.load_sources(active_only=False) if s["id"] == sid), None)
+    if src is None:
+        st.error("Source not found.")
+        if st.button("Back"):
+            st.session_state.view = "chat"
+            st.rerun()
+        return
+
+    stype = src["type"]
+    st.subheader(f"Edit data source — {src.get('label', sid)}")
+    st.caption(f"Type: `{stype}`  •  id: `{sid}`")
+
+    st.markdown("**Credentials**  (current values shown; password hidden)")
+    creds: dict[str, str] = {}
+    for field in CRED_FIELDS.get(stype, []):
+        if any(w in field for w in ("PASSWORD", "TOKEN", "KEY")):
+            creds[field] = st.text_input(
+                field, type="password", placeholder="leave blank to keep current"
+            )
+        else:
+            creds[field] = st.text_input(field, value=str(config.get(field) or ""))
+
+    conn = src.get("connection") or {}
+    database = schema = ""
+    if stype == "snowflake":
+        database = st.text_input("Database", value=conn.get("database", ""))
+        schema = st.text_input("Schema", value=conn.get("schema", ""))
+    sheet_id = ""
+    if stype == "gsheets":
+        sheet_id = st.text_input("Sheet ID", value=src.get("sheet_id", ""))
+
+    cur_tables = ", ".join(t.get("name", "") for t in src.get("tables", []))
+    tables_raw = st.text_area("Tables / Views (comma or newline separated)", value=cur_tables)
+
+    caps = src.get("capability", [])
+    caps = caps if isinstance(caps, list) else [caps]
+    cur_domains = [lbl for lbl, val in DOMAIN_OPTIONS.items() if val in caps]
+    domains = st.multiselect("Domain(s)", list(DOMAIN_OPTIONS), default=cur_domains)
+    label = st.text_input("Name", value=src.get("label", sid))
+
+    c1, c2 = st.columns(2)
+    if c1.button("Save changes", type="primary", use_container_width=True):
+        table_names = [t.strip() for t in tables_raw.replace("\n", ",").split(",") if t.strip()]
+        entry: dict[str, Any] = {
+            "id": sid,
+            "type": stype,
+            "label": label,
+            "capability": [DOMAIN_OPTIONS[d] for d in domains] or caps,
+            "active": True,
+            "schema_discovery": "both",
+            "tables": [{"name": t} for t in table_names],
+        }
+        if stype == "snowflake":
+            entry["connection"] = {"database": database, "schema": schema}
+        if stype == "gsheets" and sheet_id:
+            entry["sheet_id"] = sheet_id
+        orchestrator.add_source(entry)  # upsert
+        for key, val in creds.items():
+            if val:  # only overwrite when a new value is typed
+                config.write_secret(key, val)
+        st.session_state.view = "chat"
+        st.success("Saved.")
+        st.rerun()
+    if c2.button("Cancel", use_container_width=True):
+        st.session_state.view = "chat"
+        st.rerun()
+
+
 # ------------------------------------------------------------------ Screen 3
 def _sidebar() -> None:
     with st.sidebar:
@@ -282,7 +359,10 @@ def _sidebar() -> None:
                 for t in s.get("tables", []):
                     cols = [c["name"] for c in t.get("columns", [])]
                     st.write(f"`{t['name']}`: {', '.join(cols)}")
-                st.button("🗑 Remove", key=f"rm_{s['id']}",
+                ec, rc = st.columns(2)
+                ec.button("✏️ Edit", key=f"ed_{s['id']}",
+                          on_click=_edit_source_open, args=(s["id"],))
+                rc.button("🗑 Remove", key=f"rm_{s['id']}",
                           on_click=_remove_source, args=(s["id"],))
         st.divider()
         st.button("Log out", on_click=lambda: st.session_state.update(user=None))
@@ -341,6 +421,8 @@ def main() -> None:
     view = st.session_state.view
     if view == "wizard":
         _wizard()
+    elif view == "edit":
+        _edit_source()
     elif view == "home" or not _active_sources():
         _canvas() if not _active_sources() else _home()
     else:
