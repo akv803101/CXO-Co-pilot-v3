@@ -314,21 +314,26 @@ def _sample_rows(source: dict[str, Any]) -> str:
 
 
 def add_source(entry: dict[str, Any]) -> str:
-    """Append a new source entry to sources.yaml (active). Returns its id.
+    """Upsert a source entry in sources.yaml (active). Returns its id.
 
-    Used by the Connection Wizard (Section 12, Step 5). Credentials are NOT part
-    of the entry — they go to secrets.toml via config.write_secret().
+    Used by the Connection Wizard (Section 12, Step 5). If a source with the same
+    id exists it is replaced (so re-running the wizard updates creds/config in
+    place instead of erroring). Credentials are NOT part of the entry — they go to
+    secrets.toml via config.write_secret().
     """
     if "id" not in entry or "type" not in entry:
         raise ValueError("Source entry needs at least 'id' and 'type'.")
     with _SOURCES_PATH.open("r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {"sources": []}
     data.setdefault("sources", [])
-    if any(s.get("id") == entry["id"] for s in data["sources"]):
-        raise ValueError(f"Source id '{entry['id']}' already exists.")
     entry.setdefault("active", True)
     entry.setdefault("schema_discovery", "both")
-    data["sources"].append(entry)
+    for i, s in enumerate(data["sources"]):
+        if s.get("id") == entry["id"]:
+            data["sources"][i] = entry  # replace in place
+            break
+    else:
+        data["sources"].append(entry)
     _write_sources(data)
     return entry["id"]
 
