@@ -200,7 +200,7 @@ def _wizard() -> None:
             orchestrator.add_source(entry)
             for key, val in creds.items():
                 if val:
-                    config.write_secret(key, val)
+                    config.write_secret(config.source_key(source_id, key), val)
             res = orchestrator.on_source_connected(
                 source_id, model=st.session_state.get("model")
             )
@@ -275,7 +275,9 @@ def _edit_source() -> None:
                 field, type="password", placeholder="leave blank to keep current"
             )
         else:
-            creds[field] = st.text_input(field, value=str(config.get(field) or ""))
+            creds[field] = st.text_input(
+                field, value=str(config.source_secret(sid, field) or "")
+            )
 
     conn = src.get("connection") or {}
     database = schema = ""
@@ -314,7 +316,7 @@ def _edit_source() -> None:
         orchestrator.add_source(entry)  # upsert
         for key, val in creds.items():
             if val:  # only overwrite when a new value is typed
-                config.write_secret(key, val)
+                config.write_secret(config.source_key(sid, key), val)
         st.session_state.view = "chat"
         st.success("Saved.")
         st.rerun()

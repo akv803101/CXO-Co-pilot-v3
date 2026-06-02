@@ -39,17 +39,18 @@ def _snowflake(source: dict[str, Any]) -> dict[str, Any]:
     # snowflake-labs-mcp: stdio by default, needs a read-only service-config file.
     # Credentials go through env (SNOWFLAKE_*) so they never appear in the process
     # argument list. The model qualifies tables as DB.SCHEMA.TABLE from sources.yaml.
+    sid = source["id"]
     env = {
-        "SNOWFLAKE_ACCOUNT": _normalize_account(config.require("SNOWFLAKE_ACCOUNT")),
-        "SNOWFLAKE_USER": config.require("SNOWFLAKE_USER"),
-        "SNOWFLAKE_PASSWORD": config.require("SNOWFLAKE_PASSWORD"),
-        "SNOWFLAKE_WAREHOUSE": config.get("SNOWFLAKE_WAREHOUSE", "COMPUTE_WH"),
+        "SNOWFLAKE_ACCOUNT": _normalize_account(config.require_source_secret(sid, "SNOWFLAKE_ACCOUNT")),
+        "SNOWFLAKE_USER": config.require_source_secret(sid, "SNOWFLAKE_USER"),
+        "SNOWFLAKE_PASSWORD": config.require_source_secret(sid, "SNOWFLAKE_PASSWORD"),
+        "SNOWFLAKE_WAREHOUSE": config.source_secret(sid, "SNOWFLAKE_WAREHOUSE", "COMPUTE_WH"),
     }
-    role = config.get("SNOWFLAKE_ROLE")
+    role = config.source_secret(sid, "SNOWFLAKE_ROLE")
     if role:
         env["SNOWFLAKE_ROLE"] = str(role)
     return {
-        "id": source["id"],
+        "id": sid,
         "command": "uvx",
         "args": ["snowflake-labs-mcp", "--service-config-file", _SNOWFLAKE_SERVICE_CONFIG],
         "env": env,
@@ -57,14 +58,15 @@ def _snowflake(source: dict[str, Any]) -> dict[str, Any]:
 
 
 def _gsheets(source: dict[str, Any]) -> dict[str, Any]:
+    sid = source["id"]
     env: dict[str, str] = {}
-    sa_path = config.get("GOOGLE_SERVICE_ACCOUNT_PATH")
+    sa_path = config.source_secret(sid, "GOOGLE_SERVICE_ACCOUNT_PATH")
     if sa_path:
         env["SERVICE_ACCOUNT_PATH"] = str(sa_path)
-    folder = config.get("DRIVE_FOLDER_ID")
+    folder = config.source_secret(sid, "DRIVE_FOLDER_ID")
     if folder:
         env["DRIVE_FOLDER_ID"] = str(folder)
-    return {"id": source["id"], "command": "uvx", "args": ["mcp-google-sheets"], "env": env}
+    return {"id": sid, "command": "uvx", "args": ["mcp-google-sheets"], "env": env}
 
 
 def _sql_url(server_pkg: str, url_key: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
@@ -72,7 +74,7 @@ def _sql_url(server_pkg: str, url_key: str) -> Callable[[dict[str, Any]], dict[s
         return {
             "id": source["id"],
             "command": "uvx",
-            "args": [server_pkg, config.require(url_key)],
+            "args": [server_pkg, config.require_source_secret(source["id"], url_key)],
             "env": {},
         }
 
@@ -80,10 +82,11 @@ def _sql_url(server_pkg: str, url_key: str) -> Callable[[dict[str, Any]], dict[s
 
 
 def _bigquery(source: dict[str, Any]) -> dict[str, Any]:
+    sid = source["id"]
     return {
-        "id": source["id"],
+        "id": sid,
         "command": "uvx",
-        "args": ["mcp-bigquery", "--project", config.require("BQ_PROJECT_ID")],
+        "args": ["mcp-bigquery", "--project", config.require_source_secret(sid, "BQ_PROJECT_ID")],
         "env": {},
     }
 

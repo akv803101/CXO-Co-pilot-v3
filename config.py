@@ -8,6 +8,7 @@ never in sources.yaml.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -66,6 +67,32 @@ def require(key: str) -> str:
     if val is None or val == "":
         raise RuntimeError(
             f"Missing required secret '{key}'. Add it to .streamlit/secrets.toml."
+        )
+    return str(val)
+
+
+# --- per-source credentials (item 10) ---
+# Each source can carry its own creds under a namespaced key:
+#   <SOURCE_ID>__<FIELD>  e.g.  SALES__SNOWFLAKE_PASSWORD
+# Lookups fall back to the bare global key so a single shared account still works.
+def source_key(source_id: str, key: str) -> str:
+    ns = re.sub(r"[^A-Z0-9]", "_", str(source_id).upper())
+    return f"{ns}__{key}"
+
+
+def source_secret(source_id: str, key: str, default: Any = None) -> Any:
+    val = get(source_key(source_id, key))
+    if val not in (None, ""):
+        return val
+    return get(key, default)
+
+
+def require_source_secret(source_id: str, key: str) -> str:
+    val = source_secret(source_id, key)
+    if val is None or val == "":
+        raise RuntimeError(
+            f"Missing credential '{key}' for source '{source_id}'. "
+            f"Add it via the source's Edit screen or to secrets.toml."
         )
     return str(val)
 
