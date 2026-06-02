@@ -12,12 +12,17 @@ nothing about routing is hardcoded here.
 
 from __future__ import annotations
 
+import re
 import sys
+from pathlib import Path
 from typing import Any, Callable
+
+import yaml
 
 import orchestrator
 
 PASS, FAIL, SKIP = "PASS", "FAIL", "SKIP"
+_FACTS_PATH = Path(__file__).parent / "registry" / "eval_facts.yaml"
 
 
 # --------------------------------------------------------------- demo questions
@@ -100,14 +105,49 @@ def layer3_checks(q: dict[str, Any], resp: dict[str, Any]) -> list[tuple[str, st
 
 
 # ------------------------------------------------------------------- Layer 2
-def layer2_checks(q: dict[str, Any], resp: dict[str, Any]) -> list[tuple[str, str, str]]:
-    """Calculation accuracy vs seeded EVAL data.
+def _load_eval_facts() -> list[dict[str, Any]]:
+    if not _FACTS_PATH.exists():
+        return []
+    data = yaml.safe_load(_FACTS_PATH.read_text(encoding="utf-8")) or {}
+    return data.get("facts", [])
 
-    Requires an EVAL schema / EVAL tabs with known round numbers (Section 11).
-    Until those are seeded against live sources this returns SKIP per question —
-    SKIP does not count against the 95% pass target.
-    """
-    return [(f"{q['id']} calc", SKIP, "seed EVAL data to enable")]
+
+def _numbers(text: str) -> list[float]:
+    out: list[float] = []
+    for m in re.findall(r"-?\d[\d,]*\.?\d*", text):
+        try:
+            out.append(float(m.replace(",", "")))
+        except ValueError:
+            pass
+    return out
+
+
+def _number_matches(answer: str, expect: float, tolerance: float) -> bool:
+    """Deterministic: does any number in the answer match expect within tolerance?"""
+    expect = float(expect)
+    allow = max(float(tolerance), float(tolerance) * abs(expect))
+    return any(abs(n - expect) <= allow for n in _numbers(answer))
+
+
+def layer2_run(model: str | None = None) -> list[tuple[str, str, str, str]]:
+    """Run known-answer checks from registry/eval_facts.yaml (deterministic)."""
+    facts = _load_eval_facts()
+    if not facts:
+        return [("L2", "(no eval_facts.yaml)", SKIP, "add registry/eval_facts.yaml to enable")]
+    rows: list[tuple[str, str, str, str]] = []
+    for fact in facts:
+        q = fact["question"]
+        try:
+            resp = orchestrator.ask(q, model=model)
+        except Exception as exc:
+            rows.append(("L2", q[:45], FAIL, f"ask() raised: {exc}"))
+            continue
+        ok = _number_matches(resp.get("answer", ""), fact["expect"], fact.get("tolerance", 0))
+        rows.append(
+            ("L2", q[:45], PASS if ok else FAIL,
+             "" if ok else f"expected {fact['expect']}, got: {resp.get('answer', '')[:80]}")
+        )
+    return rows
 
 
 # ---------------------------------------------------------------------- runner
@@ -129,10 +169,11 @@ def run() -> int:
                     {"role": "assistant", "content": resp.get("answer", "")}]
         for name, status, why in layer1_checks(resp):
             rows.append(("L1", f"{q['id']}:{name}", status, why))
-        for name, status, why in layer2_checks(q, resp):
-            rows.append(("L2", name, status, why))
         for name, status, why in layer3_checks(q, resp):
             rows.append(("L3", f"{q['id']}:{name}", status, why))
+
+    # Layer 2 — deterministic known-answer checks (own questions, not Q1–Q5)
+    rows.extend(layer2_run())
 
     # ---- report
     print("\n=== CXO Copilot eval report ===")

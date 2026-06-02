@@ -1,0 +1,16 @@
+# Layer 2 (calculation accuracy) — deterministic known-answer checks.
+# Seed questions whose CORRECT numeric answer you already know. eval.py asks each
+# and verifies the number appears in the answer (deterministic number matching,
+# NOT LLM-as-judge — per CLAUDE.md Section 11).
+#
+# Seed values for YOUR data. The examples below are TPCH benchmark invariants
+# (true for SNOWFLAKE_SAMPLE_DATA.TPCH_SF1000 and every TPCH scale factor).
+#   tolerance: absolute allowance on the matched number (0 = exact).
+
+facts:
+  - question: "How many rows are in the REGION table? Use SELECT COUNT(*)."
+    expect: 5
+    tolerance: 0
+  - question: "How many rows are in the NATION table? Use SELECT COUNT(*)."
+    expect: 25
+    tolerance: 0
