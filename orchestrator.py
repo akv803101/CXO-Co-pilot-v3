@@ -265,7 +265,11 @@ def ask(
                 system=system, messages=messages, tools=tools, max_tokens=2048
             )
             if not result.tool_calls:
-                return normalize(_extract_json(result.text))
+                payload = normalize(_extract_json(result.text))
+                # Trust actual tool usage over the model's self-reported sources.
+                if host.used_sources:
+                    payload["sources_used"] = sorted(host.used_sources)
+                return payload
             messages.append(
                 {"role": "assistant", "content": result.text, "tool_calls": result.tool_calls}
             )
@@ -276,7 +280,10 @@ def ask(
                 )
         # Tool budget exhausted — force a final answer with no tools.
         final = provider.chat(system=system, messages=messages, max_tokens=2048)
-        return normalize(_extract_json(final.text))
+        payload = normalize(_extract_json(final.text))
+        if host.used_sources:
+            payload["sources_used"] = sorted(host.used_sources)
+        return payload
     finally:
         if host is not None:
             host.close()

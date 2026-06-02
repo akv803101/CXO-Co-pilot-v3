@@ -21,3 +21,6 @@ venv/
 # Generated decks
 *.pptx
 exports/
+
+# Usage analytics log
+usage_log.jsonl

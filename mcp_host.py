@@ -162,6 +162,10 @@ class McpHost:
         self._schema: list[dict[str, Any]] = []
         # (source_id, error) for sources that failed to connect — answer from the rest.
         self.errors: list[tuple[str, str]] = []
+        # source ids whose tools were actually called (drives accurate sources_used)
+        self.used_sources: set[str] = set()
+        # neutral_tool_name -> source_id
+        self._tool_source: dict[str, str] = {}
         for src in sources:
             if src.get("type") in mcp_config._BUILTIN:
                 continue
@@ -180,6 +184,7 @@ class McpHost:
             for tool in tools:
                 neutral = _safe_tool_name(src["id"], tool["name"])
                 self._registry[neutral] = (server, tool["name"])
+                self._tool_source[neutral] = src["id"]
                 self._schema.append(
                     {
                         "name": neutral,
@@ -200,6 +205,7 @@ class McpHost:
         if entry is None:
             return f"Error: unknown tool '{neutral_name}'."
         server, tool = entry
+        self.used_sources.add(self._tool_source.get(neutral_name, server.source_id))
         try:
             return server.call_tool(tool, arguments)
         except Exception as exc:

@@ -11,6 +11,9 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+import time
+
+import analytics
 import auth
 import config
 import llm
@@ -349,6 +352,8 @@ def _sidebar() -> None:
         st.button("➕ New Chat", use_container_width=True, on_click=_new_chat)
         st.button("🔌 Add Data Source", use_container_width=True,
                   on_click=lambda: st.session_state.update(view="wizard"))
+        st.button("📊 Usage", use_container_width=True,
+                  on_click=lambda: st.session_state.update(view="usage"))
         st.divider()
         st.markdown("**Connected Sources**")
         for s in _active_sources():
@@ -394,17 +399,28 @@ def _chat() -> None:
             st.markdown(text)
         with st.chat_message("assistant"):
             with st.spinner("Thinking…"):
+                started = time.time()
+                ok, err = True, ""
                 try:
                     payload = orchestrator.ask(
                         text, history=_history_for_api()[:-1],
                         model=st.session_state.model,
                     )
                 except Exception as exc:
+                    ok, err = False, str(exc)
                     payload = {
                         "answer": f"Something went wrong reaching the data: {exc}",
                         "chart": {"type": "none", "x": [], "y": []},
                         "slide_deck": False, "sources_used": [], "follow_up_hints": ["", ""],
                     }
+                analytics.log_query(
+                    user=st.session_state.user.get("email", "?"),
+                    model=st.session_state.model,
+                    question=text,
+                    sources_used=payload.get("sources_used", []),
+                    latency_s=time.time() - started,
+                    ok=ok, error=err,
+                )
             _render_payload(payload)
         st.session_state.messages.append({"role": "assistant", "payload": payload})
         st.rerun()
@@ -423,10 +439,50 @@ def main() -> None:
         _wizard()
     elif view == "edit":
         _edit_source()
+    elif view == "usage":
+        _usage_page()
     elif view == "home" or not _active_sources():
         _canvas() if not _active_sources() else _home()
     else:
         _chat()
+
+
+def _usage_page() -> None:
+    st.title("Usage analytics")
+    s = analytics.summary()
+    if s.get("total", 0) == 0:
+        st.info("No queries logged yet. Ask a few questions, then come back.")
+        if st.button("Back to chat"):
+            st.session_state.view = "chat"
+            st.rerun()
+        return
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total queries", s["total"])
+    c2.metric("Errors", s["errors"])
+    c3.metric("Avg latency (s)", s["avg_latency_s"])
+
+    if s["by_model"]:
+        st.subheader("Queries by model")
+        st.bar_chart(pd.Series(s["by_model"]))
+    if s["by_source"]:
+        st.subheader("Queries by source")
+        st.bar_chart(pd.Series(s["by_source"]))
+    if s["by_user"]:
+        st.subheader("Queries by user")
+        st.table(pd.DataFrame(sorted(s["by_user"].items()), columns=["User", "Queries"]))
+
+    st.subheader("Recent queries")
+    recent = analytics.read_usage(limit=50)
+    st.dataframe(
+        pd.DataFrame(recent)[
+            ["ts", "user", "model", "question", "sources_used", "latency_s", "ok"]
+        ],
+        use_container_width=True,
+    )
+    if st.button("Back to chat"):
+        st.session_state.view = "chat"
+        st.rerun()
 
 
 def _home() -> None:
