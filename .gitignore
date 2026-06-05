@@ -17,6 +17,7 @@ venv/
 .DS_Store
 .idea/
 .vscode/
+.claude/
 
 # Generated decks
 *.pptx
