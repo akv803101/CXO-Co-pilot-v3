@@ -63,8 +63,28 @@ def _init_state() -> None:
 
 
 # ---------------------------------------------------------------------- helpers
+def _allowed_source_ids() -> list[str] | None:
+    """Source ids the signed-in user's roles permit. None = unrestricted (all)."""
+    user = st.session_state.get("user") or {}
+    caps = auth.allowed_capabilities(user.get("roles", []))
+    if caps == "*":
+        return None
+    out = []
+    for s in orchestrator.load_sources(active_only=True):
+        scaps = s.get("capability", [])
+        scaps = scaps if isinstance(scaps, list) else [scaps]
+        if set(scaps) & caps:
+            out.append(s["id"])
+    return out
+
+
 def _active_sources() -> list[dict[str, Any]]:
-    return orchestrator.load_sources(active_only=True)
+    """Active sources visible to the current user (role-filtered)."""
+    srcs = orchestrator.load_sources(active_only=True)
+    allowed = _allowed_source_ids()
+    if allowed is None:
+        return srcs
+    return [s for s in srcs if s["id"] in set(allowed)]
 
 
 def _history_for_api() -> list[dict[str, str]]:
@@ -116,17 +136,36 @@ def _login() -> None:
     with mid:
         st.markdown("## 📊 CXO Copilot")
         st.caption("Ask any business question in plain English.")
-        with st.form("login"):
-            email = st.text_input("Email")
-            password = st.text_input("Password", type="password")
-            if st.form_submit_button("Sign in", use_container_width=True):
-                user = auth.check(email, password)
-                if user:
-                    st.session_state.user = user
-                    _refresh_suggestions()
-                    st.rerun()
-                else:
-                    st.error("Invalid email or password.")
+        sign_in, sign_up = st.tabs(["Sign in", "Sign up"])
+
+        with sign_in:
+            with st.form("login"):
+                email = st.text_input("Email")
+                password = st.text_input("Password", type="password")
+                if st.form_submit_button("Sign in", use_container_width=True):
+                    user = auth.check(email, password)
+                    if user:
+                        st.session_state.user = user
+                        _refresh_suggestions()
+                        st.rerun()
+                    else:
+                        st.error("Invalid email or password.")
+
+        with sign_up:
+            with st.form("signup", clear_on_submit=False):
+                name = st.text_input("Name")
+                su_email = st.text_input("Email", key="su_email")
+                su_pw = st.text_input("Password (min 6 chars)", type="password", key="su_pw")
+                roles = st.multiselect("Role(s)", auth.ALL_ROLES, default=["analyst"])
+                if st.form_submit_button("Create account", use_container_width=True):
+                    try:
+                        user = auth.create_user(su_email, name, su_pw, roles)
+                        st.session_state.user = user
+                        _refresh_suggestions()
+                        st.success("Account created.")
+                        st.rerun()
+                    except ValueError as exc:
+                        st.error(str(exc))
 
 
 # ------------------------------------------------------------------ Screen 2
@@ -350,7 +389,10 @@ def _edit_source() -> None:
 def _sidebar() -> None:
     with st.sidebar:
         st.markdown(f"**📊 CXO Copilot**")
+        roles = st.session_state.user.get("roles", [])
         st.caption(f"Signed in as {st.session_state.user['name']}")
+        if roles:
+            st.caption("Role: " + ", ".join(roles))
         st.divider()
         options = llm.list_options()
         if options:
@@ -433,6 +475,7 @@ def _chat() -> None:
                 try:
                     payload = orchestrator.ask(
                         text, history=_history_for_api()[:-1],
+                        allowed_source_ids=_allowed_source_ids(),
                         model=st.session_state.model,
                     )
                 except Exception as exc:

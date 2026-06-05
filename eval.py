@@ -27,39 +27,49 @@ _FACTS_PATH = Path(__file__).parent / "registry" / "eval_facts.yaml"
 
 # --------------------------------------------------------------- demo questions
 def _questions() -> list[dict[str, Any]]:
-    """The 5 demo question types (Section 6). Expected routing derived from caps."""
+    """The 5 demo question TYPES (Section 6), adapted to the active dataset.
+
+    Routing is derived from the live sources: the revenue-capability source (or
+    the first source) handles aggregation/metric/drill-down; a second source
+    handles the count; the executive brief federates across all active sources.
+    The wording is generic so it works on whatever tables are connected
+    (verified here against SNOWFLAKE_SAMPLE_DATA.TPCH_SF1000: orders + customer).
+    """
     sources = orchestrator.load_sources(active_only=True)
     by_cap: dict[str, str] = {}
     for s in sources:
         for cap in orchestrator._capabilities(s):
             by_cap.setdefault(cap, s["id"])
     all_ids = [s["id"] for s in sources]
+    rev = by_cap.get("revenue") or (all_ids[0] if all_ids else None)
+    other = next((i for i in all_ids if i != rev), rev)
     return [
-        {
+        {  # Q1 — aggregation / "did we hit the number"
             "id": "Q1",
-            "text": "Did we hit our revenue target this period? Where did we miss?",
-            "must_include": [by_cap[c] for c in ("revenue",) if c in by_cap],
+            "text": "How many orders are in the orders table? Use SELECT COUNT(*).",
+            "must_include": [rev] if rev else [],
         },
-        {
+        {  # Q2 — derived metric (sum/ratio) computed from raw rows
             "id": "Q2",
-            "text": "What was the ROI of each marketing campaign by channel?",
-            "must_include": [by_cap[c] for c in ("campaigns",) if c in by_cap],
+            "text": "What is the total value of all orders? Compute SUM(o_totalprice) "
+                    "from the orders table.",
+            "must_include": [rev] if rev else [],
         },
-        {
+        {  # Q3 — count against a different source
             "id": "Q3",
-            "text": "How healthy is our pipeline? Which deals are at risk?",
-            "must_include": [by_cap[c] for c in ("pipeline",) if c in by_cap],
+            "text": "How many customers are in the customer table? Use SELECT COUNT(*).",
+            "must_include": [other] if other else [],
         },
-        {
+        {  # Q4 — executive brief: federate all sources + trigger a deck
             "id": "Q4",
-            "text": "Give me an executive brief across revenue, pipeline and campaigns.",
+            "text": "Give me an executive brief summarizing the orders and customers data.",
             "must_include": all_ids,
             "expect_slide_deck": True,
         },
-        {
+        {  # Q5 — drill-down follow-up (multi-turn, re-query one source)
             "id": "Q5",
-            "text": "Drill into that region — what drove the miss?",
-            "must_include": [by_cap[c] for c in ("revenue",) if c in by_cap],
+            "text": "Now break that order count down by order priority (o_orderpriority).",
+            "must_include": [rev] if rev else [],
             "multi_turn": True,
         },
     ]

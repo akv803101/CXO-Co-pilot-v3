@@ -43,6 +43,7 @@ Connect your data once, then just ask. Behind the scenes it picks the right sour
 - 📊 **Boardroom-ready output** — prose + bar/line charts + comparison tables + `.pptx` export
 - 🔁 **Cross-source federation** — answer spans multiple sources; a failing one is skipped, not fatal
 - 🔐 **Secrets stay local** — keys entered in-app, written only to gitignored `secrets.toml`
+- 👥 **Login, sign-up & role-based access** — roles gate which sources each user can query
 - 📈 **Usage analytics** + ✅ **three-layer evaluation** baked in
 
 ---
@@ -56,6 +57,7 @@ Connect your data once, then just ask. Behind the scenes it picks the right sour
 | OpenAI & other OpenAI-compatible providers | ⚙️ Supported — add a key to use |
 | Google Sheets · Postgres · MySQL · BigQuery | ⚙️ Wired & connection-ready — pending live creds |
 | Charts · comparison tables · usage analytics | ✅ Working |
+| Login · sign-up · role-based access (RBAC) | ✅ Working |
 | Styled `.pptx` deck export (offline) | ✅ Working — 16:9, branded, rendered chart |
 | Gamma deck export | ⚙️ Built — add a Gamma API key to enable |
 
@@ -107,7 +109,7 @@ cp .streamlit/users.yaml.example  .streamlit/users.yaml      # app logins
 uv run streamlit run app.py        # → http://localhost:8501
 ```
 
-Demo login: **`admin@demo.co` / `admin123`**
+Demo logins: **`admin@demo.co` / `admin123`** (all sources) · `sales@demo.co` / `sales123` (revenue/pipeline) · `marketing@demo.co` / `marketing123` (campaigns) — or **Sign up** to self-register with a role. Roles gate which sources a user can query (`auth.ROLE_CAPABILITIES`).
 
 ---
 
