@@ -55,7 +55,8 @@ Connect your data once, then just ask. Behind the scenes it picks the right sour
 | **Anthropic** (Claude) & **Groq** (Llama) | ✅ Verified live |
 | OpenAI & other OpenAI-compatible providers | ⚙️ Supported — add a key to use |
 | Google Sheets · Postgres · MySQL · BigQuery | ⚙️ Wired & connection-ready — pending live creds |
-| Charts · comparison tables · `.pptx` deck · usage analytics | ✅ Working |
+| Charts · comparison tables · usage analytics | ✅ Working |
+| Styled `.pptx` deck export (offline) | ✅ Working — 16:9, branded, rendered chart |
 | Gamma deck export | ⚙️ Built — add a Gamma API key to enable |
 
 ---
@@ -119,7 +120,7 @@ Demo login: **`admin@demo.co` / `admin123`**
 **Ask** — Type in plain English. You get prose + a chart (+ a comparison table when comparing entities).
 
 **Export a deck** — Export buttons appear when the answer is an *executive brief* — i.e. the question contains **"brief", "summary", "deck", or "board"**, or spans all sources (e.g. *"Give me an executive brief on revenue and customers."*). Two options:
-- **📥 .pptx (offline)** — instant, no account needed
+- **📥 .pptx (offline)** — instant, no account needed. Styled 16:9 deck: branded navy title slide, colored header bars, a real rendered bar/line chart, and a sources slide
 - **✨ Generate in Gamma** — a polished deck in ~1–2 min; paste a [Gamma](https://gamma.app) API key once (in the deck panel or `secrets.toml`) and it's produced in your Gamma workspace with a shareable link
 
 **Per-source credentials** — Creds can be shared globally (`SNOWFLAKE_PASSWORD`) or scoped to one source (`PROD_DB__SNOWFLAKE_PASSWORD`), so two sources can use different accounts. The bare key is the fallback; the wizard handles this automatically.
