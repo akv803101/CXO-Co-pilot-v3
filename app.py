@@ -340,14 +340,20 @@ def _sidebar() -> None:
                 format_func=lambda o: o + ("" if llm.provider_has_key(o) else "  (no key)"),
             )
             st.session_state.model = choice
-            if not llm.provider_has_key(choice):
-                env = llm.api_key_env(choice)
-                with st.form(f"key_{env}", clear_on_submit=True):
-                    key_val = st.text_input(f"{env}", type="password",
-                                            placeholder="paste API key")
-                    if st.form_submit_button("Save key") and key_val:
-                        config.write_secret(env, key_val)
-                        st.rerun()
+            env = llm.api_key_env(choice)
+            if env:
+                has_key = llm.provider_has_key(choice)
+                # Field is always reachable so an invalid/expired key can be replaced.
+                box = st.expander(f"Update {env}") if has_key else st.container()
+                with box:
+                    if not has_key:
+                        st.caption(f"⚠️ No {env} set — paste it to use this model.")
+                    with st.form(f"key_{env}", clear_on_submit=True):
+                        key_val = st.text_input(env, type="password",
+                                                placeholder="paste API key")
+                        if st.form_submit_button("Save key") and key_val:
+                            config.write_secret(env, key_val.strip())
+                            st.rerun()
         st.divider()
         st.button("🏠 Home", use_container_width=True,
                   on_click=lambda: st.session_state.update(view="home"))
