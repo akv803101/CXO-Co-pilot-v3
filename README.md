@@ -165,6 +165,34 @@ Exits non-zero if Layer 1/3 fail or Layer 2 drops below 95%.
 
 ---
 
+## Deployment
+
+Designed for **[Streamlit Community Cloud](https://streamlit.io/cloud)** (free, native Streamlit hosting):
+
+1. Push to GitHub (done) → on Streamlit Cloud, **New app** → point at `app.py`
+2. Add your keys/creds under **App → Settings → Secrets** (same keys as `secrets.toml`)
+3. Ensure `uv`/`uvx` availability for MCP servers, or pin the MCP packages in `requirements.txt`
+
+> Streamlit needs a persistent server, so serverless hosts like **Vercel** aren't a fit (Vercel targets Next.js/edge). Render, Railway, or Fly.io also work if you outgrow Community Cloud.
+
+---
+
+## Security & production hardening
+
+Authentication here is intentionally **lightweight (demo-grade)** to stay dependency-free per the spec. **RBAC *enforcement* is already server-side** — a user can only query sources their role allows (gated in `ask()` via `allowed_source_ids`). Before a production / multi-user rollout, harden the **authentication layer**:
+
+| Area | Today (demo) | Recommended for production |
+|---|---|---|
+| Password hashing | sha256 (fast, unsalted) | **bcrypt / argon2** (salted, slow) |
+| Identity | Local `users.yaml` | **Managed IdP** — Streamlit native OIDC (`st.login`) with **Auth0 / Google / Microsoft Entra**, or Supabase/Clerk |
+| Sessions | In-memory `session_state` | Signed, expiring cookie / IdP-issued token |
+| Abuse protection | None | Rate limiting + account lockout + MFA (via IdP) |
+| Transport | local HTTP | HTTPS/TLS (automatic on Streamlit Cloud) |
+
+The role → capability → source mapping (`auth.ROLE_CAPABILITIES`) stays the same; only the sign-in/identity layer changes. The cleanest upgrade is **Streamlit's built-in OIDC with Auth0 or Google**, which offloads passwords, MFA, and sessions to the identity provider while keeping our RBAC on top.
+
+---
+
 <div align="center">
 
 **CXO Copilot · IntelliBridge**
