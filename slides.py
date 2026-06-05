@@ -7,6 +7,10 @@ app.py — same signature, returns a file path.
 
 from __future__ import annotations
 
+import json
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +18,7 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 
 _EXPORT_DIR = Path(__file__).parent / "exports"
+_GAMMA_BASE = "https://public-api.gamma.app/v0.2"
 
 
 def build_deck(response: dict[str, Any], brand: str = "CXO Copilot") -> str:
@@ -59,3 +64,80 @@ def build_deck(response: dict[str, Any], brand: str = "CXO Copilot") -> str:
     out = _EXPORT_DIR / "executive_brief.pptx"
     prs.save(out)
     return str(out)
+
+
+# ----------------------------------------------------------------- Gamma export
+def _gamma_input_text(response: dict[str, Any], brand: str) -> str:
+    """Turn a response dict into rich input text for Gamma."""
+    lines = [f"# {brand} — Executive Brief", "", response.get("answer", "")]
+    chart = response.get("chart") or {}
+    if chart.get("type") in ("bar", "line") and chart.get("x"):
+        lines += ["", f"## {chart.get('title', 'Key figures')}"]
+        for cat, val in zip(chart["x"], chart["y"]):
+            lines.append(f"- {cat}: {val}")
+    if response.get("sources_used"):
+        lines += ["", "## Sources"] + [f"- {s}" for s in response["sources_used"]]
+    return "\n".join(lines)
+
+
+def _gamma_get(path: str, api_key: str) -> dict[str, Any]:
+    req = urllib.request.Request(
+        f"{_GAMMA_BASE}{path}",
+        headers={"X-API-KEY": api_key, "accept": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read())
+
+
+def generate_with_gamma(
+    response: dict[str, Any], api_key: str, brand: str = "CXO Copilot",
+    poll_timeout: int = 180,
+) -> dict[str, Any]:
+    """Create a presentation in Gamma from a response. Returns {ok, url|error}.
+
+    Uses the Gamma public Generations API: POST a generation, then poll until
+    completed and return the gammaUrl. Needs a Gamma API key (Pro plan).
+    """
+    body = json.dumps(
+        {
+            "inputText": _gamma_input_text(response, brand),
+            "format": "presentation",
+            "textMode": "preserve",
+        }
+    ).encode()
+    req = urllib.request.Request(
+        f"{_GAMMA_BASE}/generations",
+        data=body,
+        method="POST",
+        headers={
+            "X-API-KEY": api_key,
+            "Content-Type": "application/json",
+            "accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.loads(r.read())
+    except urllib.error.HTTPError as exc:
+        return {"ok": False, "error": f"{exc.code} {exc.read().decode(errors='ignore')[:200]}"}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+    gen_id = data.get("generationId") or data.get("id")
+    if not gen_id:
+        return {"ok": False, "error": f"no generationId in response: {data}"}
+
+    start = time.time()
+    while time.time() - start < poll_timeout:
+        time.sleep(5)
+        try:
+            status = _gamma_get(f"/generations/{gen_id}", api_key)
+        except Exception as exc:
+            return {"ok": False, "error": f"poll failed: {exc}"}
+        state = (status.get("status") or "").lower()
+        if state in ("completed", "done", "success"):
+            url = status.get("gammaUrl") or status.get("url") or status.get("exportUrl")
+            return {"ok": True, "url": url}
+        if state in ("failed", "error"):
+            return {"ok": False, "error": status.get("message", "Gamma generation failed")}
+    return {"ok": False, "error": "Gamma generation timed out — check gamma.app."}

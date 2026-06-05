@@ -231,13 +231,34 @@ def _render_payload(payload: dict[str, Any]) -> None:
         (st.bar_chart if ctype == "bar" else st.line_chart)(df)
 
     if payload.get("slide_deck"):
-        if st.button("Export as Deck", key=f"deck_{id(payload)}"):
-            path = slides.build_deck(payload, config.variables()["BRAND_NAME"])
-            with open(path, "rb") as fh:
-                st.download_button(
-                    "Download .pptx", fh, file_name="executive_brief.pptx",
-                    key=f"dl_{id(payload)}",
-                )
+        brand = config.variables()["BRAND_NAME"]
+        st.markdown("**Export this brief:**")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("📥 .pptx (offline)", key=f"deck_{id(payload)}"):
+                path = slides.build_deck(payload, brand)
+                with open(path, "rb") as fh:
+                    st.download_button(
+                        "Download .pptx", fh, file_name="executive_brief.pptx",
+                        key=f"dl_{id(payload)}",
+                    )
+        with c2:
+            gkey = config.get("GAMMA_API_KEY")
+            if st.button("✨ Generate in Gamma", key=f"gamma_{id(payload)}",
+                         disabled=not gkey):
+                with st.spinner("Gamma is building your deck (~1–2 min)…"):
+                    res = slides.generate_with_gamma(payload, str(gkey), brand)
+                if res.get("ok") and res.get("url"):
+                    st.success("Deck created in Gamma:")
+                    st.markdown(f"[🔗 Open your Gamma deck]({res['url']})")
+                else:
+                    st.error(f"Gamma error: {res.get('error')}")
+        if not config.get("GAMMA_API_KEY"):
+            with st.expander("Add a Gamma API key for one-click Gamma decks"):
+                gk = st.text_input("GAMMA_API_KEY", type="password", key=f"gk_{id(payload)}")
+                if st.button("Save Gamma key", key=f"gks_{id(payload)}") and gk:
+                    config.write_secret("GAMMA_API_KEY", gk.strip())
+                    st.rerun()
 
     hints = payload.get("follow_up_hints") or []
     if any(hints):
